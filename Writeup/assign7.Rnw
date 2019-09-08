@@ -1,0 +1,294 @@
+\documentclass[12pt]{article}
+
+\usepackage[margin=1.0in]{geometry}
+\usepackage[links,assignheader]{assign}
+
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{lifecon}
+
+\lhead{Assignment 7 \\ Acma 320}
+\rhead{Nathan Esau \\ 301197568}
+
+\begin{document}
+
+\section*{Instructions}
+
+In your code, the age at issue $(x)$, the annual effective interest rate $(i)$, the term of the contract $(n)$, the payment frequency $(m)$, and the parameters related to the life table should all be inputs. Everything else should be calculated internally. For purposes of your printouts, please use an age at issue of $x = 40$, an interest rate of $i = 0.05$, a term of $n = 10$ and a payment frequency of $m = 4$.
+
+\section*{Task}
+
+\begin{question}
+(DHW Example 6.1 modified) Use the Standard Select Survival Model with interest at 5\% per year, to produce a table showing values of $\ddot{a}_{[x]}$, $\ddot{a}_{[x]+1}$ and $\ddot{a}_{x+2}$ for $x = 20, 21, \dots, 80$. Assume that $q_{131} = 1$. Use the parameters $A = 0.00022$, $B = 2.5e-05$, $c = 1.1$ and $\omega = 131$.
+\end{question}
+
+\begin{solution}
+The code used in this assignment can be found at \url{https://github.com/nathanesau/acma320/blob/master/R/assign7.R}. The code used to produce the annuity table is shown below.
+
+<<echo=TRUE>>=
+d <- 2
+A <- 0.00022
+B <- 2.5e-05
+c <- 1.1
+omega <- 131
+radix <- 1e+05
+x <- 40
+i <- 0.05
+n <- 10
+m <- 4
+
+tpx <- function(t,x,s) {
+  
+  f <- function(t,x,s) {
+    u = pmax(0,d-s-t)
+    j = t <= (d-s)
+    
+    exp(0.9^(u) * (
+      A*(1-j*0.9^(t))*t^(1-j)/(log(0.9)^j - 2*(1 - j)) +
+        B*c^(x)*(c^(t) - 0.9^(j*t))/(log(0.9)*j - log(c))
+    ))
+    
+  }
+  
+  m = pmax(0,d-s)
+  f(m,x,s)* f(t-m,x+m,d)
+}
+
+v <- function(i, n) {
+  (1+i)^(-n)
+}
+
+tEx <- function(t, x, s, i) {
+  v(i, t) * tpx(t, x, s) 
+}
+
+createAnnuityTable <- function(x, radix, A, B, c, omega, d, i, 
+                                 moment) {
+  
+  i <- exp(moment * log(1+i)) - 1
+  
+  Ax = vector("list", d + 1) # whole life insurance
+  ax = vector("list", d + 1) # annuity table
+  p = vector("list", d + 1)
+  
+  # recursive insurance
+  recins <- function(p, init = FALSE, Ax = NA) { 
+    
+    # Calculate A[x] values using recursion
+    prev = v(i,1)
+    A = prev
+    
+    # Special case for init
+    for(t in (omega-d-1):x) {
+      
+      prev = ifelse(init, (1-p[t-x+1])*v(i,1) + p[t-x+1]*v(i,1)*prev, 
+                    (1-p[t-x+1])*v(i,1) + p[t-x+1]*v(i,1)*Ax[t-x+1])
+      A = c(A, prev)
+    } 
+    
+    # A is backwards (since we use a backwards recursion). 
+    # Need to reverse A
+    rev(A)
+  }
+  
+  # calculate probabilities of survival over one year intervals
+  p = lapply(0:d, function(t) {
+    sapply((omega-d-1):x, function(s) {
+      tpx(1, s + t, t)
+    }
+    )
+  }
+  )
+  
+  # calculate select insurance formulas recursively
+  for(t in d:0) {
+    if(t == d) {
+      Ax[[t+1]] = recins(rev(p[[t+1]]), TRUE) 
+    } else {
+      Ax[[t+1]] = recins(rev(p[[t+1]]), FALSE, Ax[[t+2]])
+    }
+  }
+  
+  ax <- lapply(Ax, function(y) (1 - y)/(i/(1+i)))
+  
+  # combine lists into data frame (insurance table)
+  it = data.frame(x:(omega-d), Ax, ax, x:(omega-d) + d) 
+  
+  # rename data frame
+  if(d>0) { 
+    names(it) = c("x", paste0(ifelse(moment == 1, "", moment), "A[x]"), 
+                  sapply(1:(d-1), function(d) {
+                    paste0(ifelse(moment == 1, "", moment), "A[x]+", d)
+                  }), 
+                  paste0(ifelse(moment == 1, "", moment), "Ax+", d), 
+                  paste0(ifelse(moment == 1, "", moment), "a[x]"), 
+                  sapply(1:(d-1), function(d) {
+                    paste0(ifelse(moment == 1, "", moment), "a[x]+", d)
+                  }), 
+                  paste0(ifelse(moment == 1, "", moment), "ax+", d),
+                  paste0("x+",d))
+  } else {
+    names(it) = c("x", "Ax", "ax", "x")
+    if(moment > 1) {
+      names(it)[2:3] = paste0(moment, ":", names(it)[2:3])
+    }
+  }
+  
+  # remove last row
+  head(it,-1)
+}
+
+annuityTable <- createAnnuityTable(x, radix, A, B, c, 
+                                       omega, d, i, 1)
+@
+
+\medskip\noindent The values are shown in Table \ref{tab:q1table}.
+
+<<echo=FALSE, results=tex>>=
+library(xtable)
+
+table1 <- annuityTable
+names(table1) <- c("$x$", "$A_{[x]}$", "$A_{[x]+1}$", "$A_{x+2}$",
+	"$\\ddot{a}_{[x]}$", "$\\ddot{a}_{[x]+1}$", "$\\ddot{a}_{x+2}$",
+	"$x+2$")
+print(xtable(table1[1:61,],
+	label="tab:q1table",
+	caption = "Annuity values for Question 1",
+	digits = c(0, 0, 5, 5, 5, 5, 5, 5, 0)),
+	sanitize.text=function(x){x},
+	include.rownames=FALSE,
+	table.placement="ht", 
+	caption.placement="bottom",
+    tabular.environment="longtable",
+    add.to.row = list(pos = list(0), command="\\hline \\endhead "),
+    hline.after=c(-1))
+@
+
+\end{solution}
+
+\begin{question}
+Consider the following contracts sold to $[x]$
+
+\begin{enumerate}[(i)]
+\item $n$-year temporary life annuity contract payable $m$thly
+\item $n$-year deferred whole life annuity contract payable $m$thly
+\end{enumerate}
+
+For each contract, use your results from question 1 to calculate:
+
+\begin{enumerate}[(a)]
+\item The expected present value of the cashflow(s) (i.e. insurance benefit or annuity payments)
+\item The standard deviation of the present value of the cashflows
+\item The 70th and 95th percentiles of the distribution of the present value of cashflow(s) for a portfolio of $c$ contracts, $c = 100$ or 10,000 (use the Normal approximation)
+\end{enumerate}
+
+\medskip\noindent
+Assume UDD for fractional ages (i.e. do not use the actual underlying Makeham distribution).
+\end{question}
+
+\begin{solution}
+The code used to compute $A_{[x]:\lcroof{n}}^{(m)}$, $\lcterm{A}{[x]}{n}^{(m)}$ (with $\lcterm{A}{[x]}{\omega-x-1}^{(m)} = A_{[x]}^{(m)}$) and $\ddot{a}_{[x]:\lcroof{n}}^{(m)}$ (with $\ddot{a}_{[x]:\lcroof{\omega-x-1}}^{(m)} = \ddot{a}_{[x]}^{(m)}$) is shown below.
+
+<<echo=TRUE>>=
+udeferredtqx <- function(u, t, x, s) {
+  tpx(u, x, s) - tpx(u + t, x, s)
+}
+
+
+nEx <- function(n, x, s, i, moment) {
+  i <- exp(moment * log(1+i)) - 1
+  
+  tpx(n, x, s) * v(i, n)
+}
+
+Ax <- function(x, s, i, moment, n, m, type = 'term') {
+  ioriginal <- i
+  i <- exp(moment * log(1+i)) - 1
+  iupperm <- m*((1+i)^(1/m) - 1) # UDD
+
+  k <- seq(0, pmin(n, omega-x) - 1, 1)
+  pk <- udeferredtqx(k, 1, x, s)
+  vk <- v(i, k+1)
+  EPVterm <- sum(pk * vk) * i/iupperm
+  
+  if(type == 'endowment') {
+    return(EPVterm + nEx(n, x, s, ioriginal, moment))
+  } else { # term of or whole life (for whole life use large n)
+    return(EPVterm)
+  }
+}
+
+dupperm <- function(i, m) {
+  dannual <- i/(1+i)
+  m*(1 - (1-dannual)^(1/m))
+}
+
+annx <- function(x, s, i, moment, n, m) {
+  (1 - Ax(x, s, i, moment, n, m, type='endowment'))/dupperm(i,m)
+}
+@
+
+\medskip\noindent
+The EPV and variance for contract 1 are
+
+\begin{align*}
+EPV(\text{Contract 1}) &= \ddot{a}_{[x]:\lcroof{n}}^{(m)} \\
+Var(\text{Contract 2}) &= \dfrac{{}^{2}A_{[x]:\lcroof{n}}^{(m)} - \left(A_{[x]:\lcroof{n}}^{(m)}\right)^2}{(d^{(m)})^2}
+\end{align*}
+
+\medskip\noindent
+The EPV and variance for contract 2 are
+
+\begin{align*}
+EPV(\text{Contract 2}) &= {}_{n}E_{[x]} \left(\ddot{a}_{[x]+n}^{m}\right) \\
+Var(\text{Contract 2}) &= {}^{2}{}_{n}E_{[x]} \left(\ddot{a}_{[x]+n}^{(m)}\right)^2 - \left({}_{n}E_{[x]}\ddot{a}_{[x]+n}^{(m)}\right)^2 + \\
+&\qquad \dfrac{{}^{2}{}_{n}E_{[x]} \left({}^{2}A_{[x]+n}^{(m)} - \left(A_{[x]+n}^{(m)}\right)^2\right)}{(d^{(m)})^2}
+\end{align*}
+
+\medskip\noindent
+These quantities are computed below.
+
+<<echo=TRUE>>=
+EPVInsurance1 <- annx(x, 0, i, 1, n, m)
+VarInsurance1 <- (Ax(x, 0, i, 2, n, m, type = 'endowment') - 
+	Ax(x, 0, i, 1, n, m, type = 'endowment')^2) * dupperm(i, m)^(-2)
+
+EPVInsurance2 <- nEx(n, x, 0, i, 1) * (annx(x + n, n, i, 1, omega - x - 1, m))
+VarInsurance2 <- nEx(n, x, 0, i, 2) * annx(x + n, n, i, 1, omega - x - 1, m)^2 -
+	(nEx(n, x, 0, i, 1) * annx(x + n, n, i, 1, omega - x - 1, m))^2 +
+	nEx(n, x, 0, i, 2) * (Ax(x + n, n, i, 2, omega - x - 1, m) - 
+	Ax(x + n, n, i, 1, omega - x - 1, m)^2) * dupperm(i, m)^(-2)
+@
+
+\medskip\noindent
+\begin{enumerate}[(a)]
+\item The expected present of the cashflow is \Sexpr{round(EPVInsurance1, 5)} for Contract 1 and \Sexpr{round(EPVInsurance2, 5)} for Contract 2.
+\item The standard deviation of the present value of the cashflow is \Sexpr{round(sqrt(VarInsurance1), 5)} for Contract 1 and \Sexpr{round(sqrt(VarInsurance2), 5)} for Contract 2.
+\item The percentiles are computed below.
+
+<<echo=TRUE>>=
+Percentile <- function(EPV, Var, p, c) {
+  qnorm(p) * sqrt(Var) * sqrt(c) + c * EPV
+}
+
+p70Insurance1_100 <- Percentile(EPVInsurance1, VarInsurance1, 0.70, 100)
+p95Insurance1_100 <- Percentile(EPVInsurance1, VarInsurance1, 0.95, 100)
+p70Insurance2_100 <- Percentile(EPVInsurance2, VarInsurance2, 0.70, 100)
+p95Insurance2_100 <- Percentile(EPVInsurance2, VarInsurance2, 0.95, 100)
+
+p70Insurance1_10000 <- Percentile(EPVInsurance1, VarInsurance1, 0.70, 10000)
+p95Insurance1_10000 <- Percentile(EPVInsurance1, VarInsurance1, 0.95, 10000)
+p70Insurance2_10000 <- Percentile(EPVInsurance2, VarInsurance2, 0.70, 10000)
+p95Insurance2_10000 <- Percentile(EPVInsurance2, VarInsurance2, 0.95, 10000)
+@
+
+\medskip\noindent For $c = 100$, the 70th percentile is \Sexpr{round(p70Insurance1_100, 5)} for Contract 1 and \Sexpr{round(p70Insurance2_100, 5)} for Contract 2. The 95th percentile is \Sexpr{round(p95Insurance1_100, 5)} for Contract 1 and \Sexpr{round(p95Insurance2_100, 5)} for Contract 2.
+
+For $c = 10000$, the 70th percentile is \Sexpr{round(p70Insurance1_10000, 5)} for Contract 1 and \Sexpr{round(p70Insurance2_10000, 5)} for Contract 2. The 95th percentile is \Sexpr{round(p95Insurance1_10000, 5)} for Contract 1 and \Sexpr{round(p95Insurance2_10000, 5)} for Contract 2.
+
+\end{enumerate}
+
+
+\end{solution}
+
+\end{document}

@@ -1,0 +1,342 @@
+\documentclass[12pt]{article}
+
+\usepackage[margin=1.0in]{geometry}
+\usepackage[links,assignheader]{assign}
+
+\usepackage{lifecon}
+
+\lhead{Acma 320 \\ Assignment 3}
+\rhead{Nathan Esau \\ 301197568}
+
+\begin{document}
+
+\section*{Instructions}
+
+\begin{itemize}
+\item You should hand in a printed copy of your answers to the questions above (with your choice of $a$, $\omega$, $x$ and $n$) as well as email and electronic copy of your worksheet/code to your TA
+\item The values of $a$, $\omega$, $x$ and $n$ should be inputs in your worksheet/ code so that you (or your TA) can easily change them. As a result, it does not matter what values you pick to demonstrate your answers in your printouts: the worksheet/ code should produce the right answers for any choice of these four inputs
+\item For parts 4(b) and (e), use numerical evaluation with an appropriate time step ($dt$)
+\item For question 5, use the same age $x$ as you chose in question 4 for your printout
+\end{itemize}
+
+\section*{Task}
+
+\noindent
+Let $S_{0}(x) = (1 - x / \omega)^{a}$ for $0 < x < \omega$. Use Excel or another computer language (but not a symbolic computer language) to do the following.
+
+\medskip\noindent
+The code used in this assignment can be found at \url{https://github.com/nathanesau/acma320/blob/master/R/assign3.R}.
+
+\begin{question}
+Construct a life table with parameters $a$ and $\omega$ as inputs.
+\end{question}
+
+\begin{solution}
+
+The R code used to produce the life table is shown below.
+
+<<echo=TRUE>>=
+a <- 0.5
+x <- 10
+n <- 5
+omega <- 20
+radix <- 1e+05
+
+tpx <- function(t, x, a, omega) {
+  (1 - (x+t)/omega)^a / (1 - x/omega)^a
+}
+
+tqx <- function(t, x, a, omega) {
+  1 - tpx(t, x, a, omega)
+}
+
+createLifeTable <- function(x, radix, a, omega) {
+  
+  k = 0:(omega - x - 1)
+  lx = sapply(k, function(t) tpx(t, x, a, omega)) * radix
+  dx = c(-diff(lx), tail(lx, 1))
+  qx <- sapply(k, function(t) tqx(1, x + t, a, omega))
+  px <- 1 - qx
+  
+  data.frame(x = x + k, lx = lx, dx = dx, qx = qx, px = px)
+}
+
+lifeTable <- createLifeTable(x, radix, a, omega)
+@
+
+\medskip\noindent
+The life table is shown in Table \ref{tab:q1table}.
+
+<<echo=FALSE, results=tex>>=
+library(xtable)
+
+q1table <- lifeTable
+names(q1table) <- c("$x$", "$l_{x}$", "$d_{x}$", 
+	"$q_{x}$", "$p_{x}$")
+	
+print(xtable(q1table, 
+	label = "tab:q1table",
+	caption = "Life Table for Question 1 with $x = 10$, $a = 0.5$ and 
+			   $\\omega = 20$",
+	align = "llrrrr",
+	digits = c(0, 0, 2, 2, 5, 5)
+	),
+	include.rownames=FALSE,
+	sanitize.text=function(x){x},
+	tabular.placement="!ht")
+@
+
+\end{solution}
+
+\begin{question}
+Plot the survival function $S_{x}(t)$ for some chosen age $x$
+\end{question}
+
+\begin{solution}
+The R code used to plot the ${}_{t}p_{x}$ is shown below.
+
+<<echo=TRUE, fig=TRUE, include=FALSE, label=q2plot>>=
+plot(function(t) tpx(t, x, a, omega), 0, omega - x,
+     ylab = "tpx", xlab = "t")
+@
+
+\medskip\noindent The plot is shown in Figure \ref{fig:q2plot}.
+
+\begin{figure}[!htpb]
+\begin{center}
+\caption{Plot of ${}_{t}p_{x}$ for Question 2 with  $x = 10$, $a = 0.5$, and $\omega = 20$}
+\vspace{-10mm}
+\includegraphics[width=0.65\textwidth]{assign3-q2plot}
+\end{center}
+\label{fig:q2plot}
+\end{figure}
+
+\end{solution}
+
+\begin{question}
+Plot the curve of deaths for the same chosen age $x$.
+\end{question}
+
+\begin{solution}
+The R code to used to be plot the number of deaths is shown below.
+
+<<echo=TRUE, fig=TRUE, include=FALSE, label=q3plot>>=
+k <- 0:(omega - x - 1)
+dx <- sapply(k, function(t) tpx(t, x, a, omega) * 
+               tqx(1, x + t, a, omega)) * radix
+plot(x = x + k, y = dx, ylab = "dx", xlab = "x", type = 'o')
+@
+
+\medskip\noindent
+The plot is shown in Figure \ref{fig:q3plot}.
+
+\begin{figure}
+\begin{center}
+\caption{Plot of number of deaths for Question 3 with $x = 10$, $a = 0.5$, and $\omega = 20$}
+\vspace{-10mm}
+\includegraphics[width=0.65\textwidth]{assign3-q3plot}
+\end{center}
+\label{fig:q3plot}
+\end{figure}
+
+\end{solution}
+
+\begin{question}
+Use the life table to find:
+
+\begin{enumerate}[(a)]
+\item The $n$-year temporary curtate expectation of life of $(x)$
+\item The $n$-year temporary complete expectation of life of $(x)$
+\item The median age at death for $(x)$
+\item The mode of the age of death for $(x)$
+\item The standard deviation of $T(x)$
+\item The standard deviation of $K(x)$
+\end{enumerate}
+
+\end{question}
+
+\begin{solution}
+
+For this question, $x = 10$ and $n = 5$ were used.
+
+\begin{enumerate}[(a)]
+\item The code used to compute $e_{x:\lcroof{n}}$ is shown below.
+
+<<echo=TRUE>>=
+k <- 1:(n-1)
+ncurtate <- sum(sapply(k, function(t) t * tpx(t, x, a, omega) *
+                    tqx(1, x + t, a, omega))) + 
+            n * tpx(n, x, a, omega)
+@
+
+This gives $e_{10:\lcroof{5}} = \Sexpr{round(ncurtate, 5)}$.
+
+\item The code used to compute $\mathring{e}_{x:\lcroof{n}}$ is shown below.
+
+<<echo=TRUE>>=
+ncomplete <- integrate(function(t) tpx(t, x, a, omega), 0, n)$value
+@
+
+This gives $\mathring{e}_{10:\lcroof{5}} = \Sexpr{round(ncomplete, 5)}$.
+
+\item The code used to compete the median $m$ is shown below.
+
+<<echo=TRUE>>=
+medianAge <- head(lifeTable$x[lifeTable$lx < radix/2], 1)
+@
+
+This gives $m = \Sexpr{round(medianAge, 5)}$.
+
+\item The code used to compute the mode is shown below.
+
+<<echo=TRUE>>=
+modeAge <- lifeTable$x[which(lifeTable$dx == max(lifeTable$dx))]
+@
+
+This gives a mode of $\Sexpr{round(modeAge, 5)}$.
+
+\item The code used to compute the standard deviation of $T(x)$ is shwon below.
+
+<<echo=TRUE>>=
+sdevTx <- sqrt(2*integrate(function(t) t * tpx(t, x, a, omega), 
+                           0, omega - x)$value -
+              integrate(function(t) tpx(t, x, a, omega), 
+                        0, omega - x)$value^2)
+@
+
+This gives a standard deviation of $\Sexpr{round(sdevTx, 5)}$.
+
+\item The code used to compute the standard deviation of $K(x)$ is shown below.
+
+<<echo=TRUE>>=
+k <- 1:(omega-x-1)
+sdevKx <- sqrt(sum(sapply(k, function(t) t^2 * tpx(t, x, a, omega) * 
+                            tqx(1, x + t, a, omega))) - 
+          sum(sapply(k, function(t) t * tpx(t, x, a, omega) * 
+                       tqx(1, x + t, a, omega)))^2)
+@
+
+This gives a standard deviation of \Sexpr{round(sdevKx, 5)}.
+
+\end{enumerate}
+
+\end{solution}
+
+\begin{question}
+Suppose the survival function above was applicable in 2010 (the base year). The mortality projection factors applied at each age $x$ are
+
+\begin{align*}
+R_{x} &= \begin{cases}
+0.999 & 0 \leq x \leq 39 \\
+0.998 & 40 \leq x \leq 59 \\
+0.995 & 60 \leq x \leq 79 \\
+0.990 & 80 \leq x \leq \omega
+\end{cases}
+\end{align*}
+
+Comment on the impact of the mortality projection on the quantities studied in question 4(c) and 4(d) for a person who turns $x$ years old:
+
+\begin{enumerate}[(a)]
+\item 10 years after the base year
+\item 25 years after the base year
+\end{enumerate}
+
+\end{question}
+
+\begin{solution}
+The code used to adjust the life table $s$ years is shown below.
+
+<<echo=TRUE>>=
+Rx <- function(x, omega) {
+  ifelse(x <= 39, 0.999,
+         ifelse(x <= 59, 0.998,
+                ifelse(x <= 79, 0.995,
+                       ifelse(x <= omega, 0.990, 0))))
+}
+
+# s is the number of years to adjust the life table
+createAdjustLifeTable <- function(x, radix, a, omega, s) {
+  
+  k = 0:(omega - x - 1)
+  qx <- sapply(k, function(t) tqx(1, x + t, a, omega)) * 
+    sapply(x, function(y) Rx(y, omega = omega))^s
+  px <- 1 - qx
+  
+  lx <- radix * c(1, head(cumprod(px), -1))
+  dx = c(-diff(lx), tail(lx, 1))
+  data.frame(x = x + k, lx = lx, dx = dx, qx = qx, px = px)
+}
+@
+
+\begin{enumerate}[(a)]
+\item For $s = 10$ the adjusted life table is shown in Table \ref{tab:q5table1}.
+
+<<echo=TRUE>>=
+adjustLifeTable10 <- createAdjustLifeTable(x, radix, a, 
+                                           omega, 10)
+@
+
+<<echo=FALSE, results=tex>>=
+q5table1 <- adjustLifeTable10
+names(q5table1) <- c("$x$", "$l_{x}$", "$d_{x}$", 
+	"$q_{x}$", "$p_{x}$")
+	
+print(xtable(q5table1, 
+	label = "tab:q5table1",
+	caption = "Life Table for Question 5(a) with $s = 10$, $x = 10$, $a = 0.5$ and 
+			   $\\omega = 20$",
+	align = "llrrrr",
+	digits = c(0, 0, 2, 2, 5, 5)
+	),
+	include.rownames=FALSE,
+	sanitize.text=function(x){x},
+	tabular.placement="!ht")
+@
+
+<<echo=TRUE>>=
+medianAge10 <- head(adjustLifeTable10$x[adjustLifeTable10$lx < 
+                                          radix/2], 1)
+modeAge10 <- adjustLifeTable10$x[which(adjustLifeTable10$dx == 
+                                         max(adjustLifeTable10$dx))]
+@
+
+The median age at death is \Sexpr{round(medianAge10, 5)} and the mode age at death is \Sexpr{round(modeAge10, 5)}.
+
+\item For $s = 25$ the adjusted life table is shown in Table \ref{tab:q5table2}.
+
+<<echo=TRUE>>=
+adjustLifeTable25 <- createAdjustLifeTable(x, radix, a, 
+                                           omega, 25)
+@
+
+<<echo=FALSE, results=tex>>=
+q5table2 <- adjustLifeTable25
+names(q5table2) <- c("$x$", "$l_{x}$", "$d_{x}$", 
+	"$q_{x}$", "$p_{x}$")
+	
+print(xtable(q5table2, 
+	label = "tab:q5table2",
+	caption = "Life Table for Question 5(b) with $s = 25$, $x = 10$, $a = 0.5$ and 
+			   $\\omega = 20$",
+	align = "llrrrr",
+	digits = c(0, 0, 2, 2, 5, 5)
+	),
+	include.rownames=FALSE,
+	sanitize.text=function(x){x},
+	tabular.placement="!ht")
+@
+
+<<echo=TRUE>>=
+medianAge25 <- head(adjustLifeTable25$x[adjustLifeTable25$lx < 
+                                          radix/2], 1)
+modeAge25 <- adjustLifeTable25$x[which(adjustLifeTable25$dx == 
+                                         max(adjustLifeTable25$dx))]
+@
+
+The median age at death is \Sexpr{round(medianAge10, 5)} and the mode age at death is \Sexpr{round(modeAge10, 5)}.
+
+\end{enumerate}
+
+\end{solution}
+
+\end{document}
